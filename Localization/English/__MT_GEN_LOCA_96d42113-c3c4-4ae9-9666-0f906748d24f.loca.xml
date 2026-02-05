@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<contentList>
+	<content contentuid="h43629730g0ec2g44a6gabfbg0aa331039681" version="1">Become an avatar</content>
+	<content contentuid="h803eecfage45ag4ad8gb210g2a5c8ca1608d" version="1">Avatars are player-controlled characters. They can lead conversations, make decisions, romance companions, and experience origin versions of character specific scenes.</content>
+	<content contentuid="hd3b8bc65gbe7cg4a98g9330g825c7ca277f1" version="1">Avatar</content>
+	<content contentuid="h5aed8391gc949g4e09ga4d6gda08ee37d8ab" version="1">This companion is currently an avatar.</content>
+
+
+
+	<content contentuid="h0f7c41aeg32f7g4a20gbf8eg54903d64643a" version="1">Avatar Shenanigans</content>
+	<content contentuid="h36a12fdfgd87dg4c28g99b8g78a953b4472c" version="1">Utility spells for avatar characters.</content>
+
+	<content contentuid="hff162199gfe6cg43b4g9665g7f51373dab8e" version="1">Increase approval</content>
+	<content contentuid="h6abd173ag723ag45fcgaec0g2c4fba7e1deb" version="1">Target approval for caster will increase by 10.</content>
+	<content contentuid="h8e8ef139g2706g4aa1gb2cfgad2611e0a2b7" version="1">Decrease approval</content>
+	<content contentuid="he432b701gdbf8g48fcgbd39g28eb91e70605" version="1">Target approval for caster will decrease by 10.</content>
+
+	<content contentuid="h895136e3g16a9g47c5g9db3gdb0e64cb4f67" version="1">Set dating flag</content>
+	<content contentuid="h1593f649g1f8eg4e6dgbff9g8dcdc7340321" version="1">The dating flag for target will be set for the caster.</content>
+	<content contentuid="h73367defgb1c4g4e65ga71bg46ccea23ba33" version="1">Set partnered flag</content>
+	<content contentuid="h97a71667g6917g4b81ga43ag60e267807745" version="1">The partnered flag for target will be set for the caster. This unlocks kiss dialog.</content>
+
+	<content contentuid="h1f1c2c46g7bc9g4337g8e92g908d44830740" version="1">Clear dating flag</content>
+	<content contentuid="hf5004ca8g69b1g459bga6acg65220089bf86" version="1">If set, the dating flag for the target will be cleared for the caster.</content>
+	<content contentuid="hcb7cd206g3558g416ag8b7egae12b050699e" version="1">Clear partnered flag</content>
+	<content contentuid="h1f8de380gf67ag47e1g8b0cg3d5ac87296c2" version="1">If set, the partnered flag for the target will be set for the caster.</content>
+</contentList>

@@ -1,0 +1,11 @@
+new entry "MX_AVATAR_STATUS"
+type "StatusData"
+data "DisplayName" "hd3b8bc65gbe7cg4a98g9330g825c7ca277f1"
+data "Description" "h5aed8391gc949g4e09ga4d6gda08ee37d8ab"
+data "Icon" "statIcons_SussurBloom"
+data "StatusType" "BOOST"
+data "StackId" "MX_AVATAR_STATUS"
+data "Passives" "MX_AVATAR_PASSIVE"
+data "StackPriority" "10"
+data "StatusPropertyFlags" "IgnoreResting"
+
