@@ -4,6 +4,8 @@
 	<content contentuid="h803eecfage45ag4ad8gb210g2a5c8ca1608d" version="1">Avatars are player-controlled characters. They can lead conversations, make decisions, romance companions, and experience origin versions of character specific scenes.</content>
 	<content contentuid="hd3b8bc65gbe7cg4a98g9330g825c7ca277f1" version="1">Avatar</content>
 	<content contentuid="h5aed8391gc949g4e09ga4d6gda08ee37d8ab" version="1">This companion is currently an avatar.</content>
+	<content contentuid="h5d541e43g6725g4564gbc81gb1ff21141857" version="1">Be quiet</content>
+	<content contentuid="h6edbe875g3945g4fefg8e37g0cf9bd1a7515" version="1">This companion will not be selected for random inclusion lines.</content>
 
 
 
@@ -23,5 +25,5 @@
 	<content contentuid="h1f1c2c46g7bc9g4337g8e92g908d44830740" version="1">Clear dating flag</content>
 	<content contentuid="hf5004ca8g69b1g459bga6acg65220089bf86" version="1">If set, the dating flag for the target will be cleared for the caster.</content>
 	<content contentuid="hcb7cd206g3558g416ag8b7egae12b050699e" version="1">Clear partnered flag</content>
-	<content contentuid="h1f8de380gf67ag47e1g8b0cg3d5ac87296c2" version="1">If set, the partnered flag for the target will be set for the caster.</content>
+	<content contentuid="h1f8de380gf67ag47e1g8b0cg3d5ac87296c2" version="1">If set, the partnered flag for the target will be cleared for the caster.</content>
 </contentList>
