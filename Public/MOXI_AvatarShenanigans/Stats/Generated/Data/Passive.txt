@@ -9,7 +9,7 @@ data "ToggleOffFunctors" "RemoveStatus(MX_AVATAR_STATUS)"
 
 new entry "MX_BE_QUIET_PASSIVE"
 type "PassiveData"
-data "Icon" "statIcons_UnderOperation"
+data "Icon" "Action_Monster_Daisy_CommandHush"
 data "DisplayName" "h5d541e43g6725g4564gbc81gb1ff21141857"
 data "Description" "h6edbe875g3945g4fefg8e37g0cf9bd1a7515"
 data "Properties" "IsToggled;ToggledDefaultOff;ToggledDefaultAddToHotbar"
