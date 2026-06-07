@@ -1,6 +1,10 @@
 AVATAR_TAG = "AVATAR_306b9b05-1057-4770-aa17-01af21acd650"
+RECRUITED_FLAG = "ORI_State_Recruited_e78c0aab-fb48-98e9-3ed9-773a0c39988d"
 QUIET_OBJECT_INCLUSION_ID = -531987421
 SPELL_CONTAINER = "MX_AS_UTILITY_CONTAINER"
+MODULE_UUID = "f355bf8c-98c7-4bcf-8cc4-080a5537a5b5"
+STATE_VARIABLE = "MX_Avatar_State"
+STATE_VERSION = 1
 SYNC_AVATAR_STATUS_TIMER = "MOXI_AvatarShenanigans_SyncAvatarStatus"
 SYNC_TENT_TIMER = "MOXI_AvatarShenanigans_SyncTent"
 TELEPORT_TO_PARTNER_TIMER = "MOXI_AvatarRomanceImprovements_TeleportToPartner"
@@ -65,14 +69,119 @@ end
 for i = 1, #HIRELINGS do
     table.insert(Origin_Avatars, HIRELINGS[i])
 end
-PersistentVarsTemplate = {
-    ["TempInDialogCompanions"] = {},
-    ["TempInDialogAvatars"] = {},
-    ["TempInDialogSpokeToAvatar"] = {},
 
-}
+AvatarState = nil
+AvatarModVarsRegistered = false
 
-PersistentVars = PersistentVarsTemplate
+function CreateAvatarState()
+    return {
+        Version = STATE_VERSION,
+        ["TempInDialogCompanions"] = {},
+        ["TempInDialogAvatars"] = {},
+        ["TempInDialogSpokeToAvatar"] = {},
+    }
+end
+
+function EnsureAvatarStateShape(state)
+    if type(state) ~= "table" then
+        state = CreateAvatarState()
+    end
+
+    state.Version = state.Version or STATE_VERSION
+    if type(state["TempInDialogCompanions"]) ~= "table" then
+        state["TempInDialogCompanions"] = {}
+    end
+    if type(state["TempInDialogAvatars"]) ~= "table" then
+        state["TempInDialogAvatars"] = {}
+    end
+    if type(state["TempInDialogSpokeToAvatar"]) ~= "table" then
+        state["TempInDialogSpokeToAvatar"] = {}
+    end
+
+    return state
+end
+
+function RegisterAvatarModVars()
+    if AvatarModVarsRegistered then
+        return true
+    end
+
+    if Ext == nil or Ext.Vars == nil or Ext.Vars.RegisterModVariable == nil then
+        return false
+    end
+
+    local ok, err = pcall(function()
+        Ext.Vars.RegisterModVariable(MODULE_UUID, STATE_VARIABLE, {
+            Server = true,
+            Client = false,
+            WriteableOnServer = true,
+            Persistent = false,
+        })
+    end)
+
+    if not ok then
+        print("[MX_Avatar] ERROR: failed to register ModVar state: "..tostring(err))
+        return false
+    end
+
+    AvatarModVarsRegistered = true
+    return true
+end
+
+function GetAvatarModVars()
+    if Ext == nil or Ext.Vars == nil or Ext.Vars.GetModVariables == nil then
+        return nil
+    end
+
+    local ok, vars = pcall(Ext.Vars.GetModVariables, MODULE_UUID)
+    if ok then
+        return vars
+    end
+
+    print("[MX_Avatar] ERROR: failed to get ModVars: "..tostring(vars))
+    return nil
+end
+
+function WriteAvatarState()
+    RegisterAvatarModVars()
+
+    local vars = GetAvatarModVars()
+    local vars_type = type(vars)
+    if vars_type ~= "userdata" and vars_type ~= "table" then
+        return false
+    end
+
+    local ok, err = pcall(function()
+        vars.MX_Avatar_State = AvatarState
+    end)
+
+    if not ok then
+        print("[MX_Avatar] ERROR: failed to write ModVar state: "..tostring(err))
+        return false
+    end
+
+    return true
+end
+
+function ResetAvatarState()
+    AvatarState = CreateAvatarState()
+    WriteAvatarState()
+    return AvatarState
+end
+
+function GetAvatarState()
+    if AvatarState == nil then
+        AvatarState = CreateAvatarState()
+        WriteAvatarState()
+    end
+
+    AvatarState = EnsureAvatarStateShape(AvatarState)
+    return AvatarState
+end
+
+function MarkAvatarStateDirty()
+    WriteAvatarState()
+end
 
 function IsPlayerInCamp(character_uuid)
     for _, _ in pairs(Osi.DB_PlayerInCamp:Get(character_uuid)) do
@@ -167,7 +276,7 @@ function GetOriginAvatars()
 end
 
 function HasTempInDialogAvatarValue(x)
-    local avatars = PersistentVarsTemplate["TempInDialogAvatars"]
+    local avatars = GetAvatarState()["TempInDialogAvatars"]
     if not avatars then
         return false
     end
@@ -194,7 +303,110 @@ function HasInPartyDialog(character_uuid)
     end
     return false
 end
+
+function GetOriginInPartyDialog(character_uuid)
+    for _, dialog_data in pairs(Osi.DB_OriginInPartyDialog:Get(character_uuid, nil)) do
+        local dialog_resource_uuid = dialog_data[2]
+        if dialog_resource_uuid ~= "NULL_00000000-0000-0000-0000-000000000000" then
+            return dialog_resource_uuid
+        end
+    end
+    return nil
+end
+
+function GetCompanionInPartyDialog(character_uuid)
+    for _, dialog_data in pairs(Osi.DB_GLO_PartyMembers_InPartyDialog:Get(character_uuid, nil)) do
+        local dialog_resource_uuid = dialog_data[2]
+        if dialog_resource_uuid ~= "NULL_00000000-0000-0000-0000-000000000000" then
+            return dialog_resource_uuid
+        end
+    end
+    return nil
+end
+
+function ShouldSetupTrueOriginAsCompanion(character_uuid)
+    return isStringInList(character_uuid, COMPANIONS)
+        and GetOriginInPartyDialog(character_uuid) ~= nil
+        and GetCompanionInPartyDialog(character_uuid) == nil
+end
+
+function SetupTrueOriginAsCompanion(character_uuid)
+    local dialog_resource_uuid = GetOriginInPartyDialog(character_uuid)
+    if dialog_resource_uuid == nil then
+        return false
+    end
+
+    if #Osi.DB_Players:Get(character_uuid) == 0 then
+        Osi.DB_Players(character_uuid)
+    end
+    if #Osi.DB_PartOfTheTeam:Get(character_uuid) == 0 then
+        Osi.DB_PartOfTheTeam(character_uuid)
+    end
+    if #Osi.DB_GLO_PartyMembers_InPartyDialog:Get(character_uuid, dialog_resource_uuid) == 0 then
+        Osi.DB_GLO_PartyMembers_InPartyDialog(character_uuid, dialog_resource_uuid)
+    end
+
+    for _, dialog_data in pairs(Osi.DB_Dialogs:Get(character_uuid, nil)) do
+        Osi.DB_Dialogs:Delete(dialog_data[1], dialog_data[2])
+    end
+    Osi.DB_Dialogs(character_uuid, dialog_resource_uuid)
+    Osi.SetFlag(RECRUITED_FLAG, character_uuid)
+    return true
+end
+
+function EnsureAvatarPassive(character_uuid)
+    if Osi.HasPassive(character_uuid,"MX_AVATAR_PASSIVE") == 0 then
+        Osi.AddPassive(character_uuid,"MX_AVATAR_PASSIVE")
+        if Osi.IsTagged(character_uuid, AVATAR_TAG) == 1 and Osi.HasAppliedStatus(character_uuid, "MX_AVATAR_STATUS") == 0 then
+            Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
+        elseif Osi.IsTagged(character_uuid, AVATAR_TAG) == 0 and Osi.HasAppliedStatus(character_uuid, "MX_AVATAR_STATUS") == 1 then
+            Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
+        end
+    end
+    pcall(Osi.ObjectTimerLaunch, character_uuid, SYNC_AVATAR_STATUS_TIMER, 1000)
+    SyncUtilitySpell(character_uuid)
+end
+
+function IsOnlyAvatar(character_uuid)
+    local avatar_count = 0
+    local character_is_avatar = false
+    for _, avatar_data in pairs(Osi.DB_Avatars:Get(nil)) do
+        avatar_count = avatar_count + 1
+        if avatar_data[1] == character_uuid then
+            character_is_avatar = true
+        end
+    end
+    return character_is_avatar and avatar_count == 1
+end
+
+function HasNoAvatars()
+    for _, _ in pairs(Osi.DB_Avatars:Get(nil)) do
+        return false
+    end
+    return true
+end
+
+function IsLastAvatarTagClear(character_uuid)
+    return IsOnlyAvatar(character_uuid) or HasNoAvatars()
+end
+
+function RestoreAvatarStatus(character_uuid)
+    Osi.DB_Avatars(character_uuid)
+    if Osi.HasPassive(character_uuid, "MX_AVATAR_PASSIVE") == 0 then
+        Osi.AddPassive(character_uuid, "MX_AVATAR_PASSIVE")
+    end
+    if Osi.HasAppliedStatus(character_uuid, "MX_AVATAR_STATUS") == 0 then
+        Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
+    end
+    if Osi.IsTagged(character_uuid, AVATAR_TAG) == 0 then
+        Osi.SetTag(character_uuid, AVATAR_TAG)
+    end
+    SyncUtilitySpell(character_uuid)
+end
+
 function OnSessionLoaded()
+    ResetAvatarState()
+
     Ext.Osiris.RegisterListener("DB_DialogRequestCache_SpeakerList_Players", 4, "before", function(a,b,c,d)
         if IsDialogInstanceInclusionDisabled(b) then
             return
@@ -208,14 +420,18 @@ function OnSessionLoaded()
         if d ~= 1 then
             return
         end
-        print("Handle DB_DialogRequestCache_SpeakerList_Players")
-        if PersistentVarsTemplate["TempInDialogAvatars"][b] == nil then
+        print("[MX_Avatar] Handle DB_DialogRequestCache_SpeakerList_Players")
+        local avatar_state = GetAvatarState()
+        local avatar_state_dirty = false
+        if avatar_state["TempInDialogAvatars"][b] == nil then
             -- process this player dialog, go through all avatars who aren't speaking and change to companion so they can picked up by inclusion nodes
             avatars_to_process = GetOriginAvatars()
             avatars_temporarily_companion = {}
             for _, avatar in ipairs(avatars_to_process) do
-                if avatar ~= c and PersistentVarsTemplate["TempInDialogCompanions"][avatar] == nil and PersistentVarsTemplate["TempInDialogSpokeToAvatar"][avatar] == nil then
-                    if not IsPlayerInCamp(avatar) then
+                if avatar ~= c and avatar_state["TempInDialogCompanions"][avatar] == nil and avatar_state["TempInDialogSpokeToAvatar"][avatar] == nil then
+                    if IsOnlyAvatar(avatar) then
+                        print("[MX_Avatar] Refusing to temporarily demote last avatar before dialog "..avatar)
+                    elseif not IsPlayerInCamp(avatar) then
                         if Osi.HasAppliedStatus(avatar, "MX_BE_QUIET_STATUS") == 0 and Osi.HasAppliedStatus(avatar, "MX_AVATAR_STATUS") == 1 then
                             -- change this avatar to companion temporarily
                             x = not IsPlayerInObjectInclusion(avatar)
@@ -230,13 +446,22 @@ function OnSessionLoaded()
                 end
 
             end
-            PersistentVarsTemplate["TempInDialogAvatars"][b] = avatars_temporarily_companion
+            avatar_state["TempInDialogAvatars"][b] = {}
+            avatar_state_dirty = true
             for _, avatar in ipairs(avatars_temporarily_companion) do
-                Osi.ClearTag(avatar, AVATAR_TAG)
-                Osi.DB_Inclusion_SpeakerCandidate(b, avatar)
+                if IsOnlyAvatar(avatar) then
+                    print("[MX_Avatar] Refusing to temporarily demote last avatar before dialog "..avatar)
+                else
+                    table.insert(avatar_state["TempInDialogAvatars"][b], avatar)
+                    Osi.ClearTag(avatar, AVATAR_TAG)
+                    Osi.DB_Inclusion_SpeakerCandidate(b, avatar)
+                end
             end
         end
-        print("Finish DB_DialogRequestCache_SpeakerList_Players")
+        if avatar_state_dirty then
+            MarkAvatarStateDirty()
+        end
+        print("[MX_Avatar] Finish DB_DialogRequestCache_SpeakerList_Players")
 
     end)
 
@@ -245,42 +470,67 @@ function OnSessionLoaded()
     end)
 
     Ext.Osiris.RegisterListener("DialogEnded", 2, "after", function(dialog, instanceId)
-        if PersistentVarsTemplate["TempInDialogAvatars"][instanceId] ~= nil then
-            avatars_to_reset = PersistentVarsTemplate["TempInDialogAvatars"][instanceId]
-            PersistentVarsTemplate["TempInDialogAvatars"][instanceId] = nil
+        local avatar_state = GetAvatarState()
+        local avatar_state_dirty = false
+
+        if avatar_state["TempInDialogAvatars"][instanceId] ~= nil then
+            avatars_to_reset = avatar_state["TempInDialogAvatars"][instanceId]
+            avatar_state["TempInDialogAvatars"][instanceId] = nil
+            avatar_state_dirty = true
 
             for _, avatar in ipairs(avatars_to_reset) do
-                Osi.SetTag(avatar, AVATAR_TAG)
+                RestoreAvatarStatus(avatar)
             end
+        end
+
+        if avatar_state["TempInDialogSpokeToAvatar"] ~= nil then
+            local temp_spoke_to_avatars_to_restore = {}
+            for character_uuid, _ in pairs(avatar_state["TempInDialogSpokeToAvatar"]) do
+                table.insert(temp_spoke_to_avatars_to_restore, character_uuid)
+            end
+            for _, character_uuid in ipairs(temp_spoke_to_avatars_to_restore) do
+                avatar_state["TempInDialogSpokeToAvatar"][character_uuid] = nil
+                avatar_state_dirty = true
+                RestoreAvatarStatus(character_uuid)
+            end
+        end
+
+        if avatar_state["TempInDialogCompanions"] ~= nil then
+            local temp_companions_to_clear = {}
+            for character_uuid, _ in pairs(avatar_state["TempInDialogCompanions"]) do
+                table.insert(temp_companions_to_clear, character_uuid)
+            end
+            for _, character_uuid in ipairs(temp_companions_to_clear) do
+                avatar_state["TempInDialogCompanions"][character_uuid] = nil
+                avatar_state_dirty = true
+                if Osi.IsTagged(character_uuid, AVATAR_TAG) == 1 then
+                    if IsOnlyAvatar(character_uuid) then
+                        print("[MX_Avatar] Refusing to clear temporary speaker because it is the only avatar "..character_uuid)
+                        RestoreAvatarStatus(character_uuid)
+                    else
+                        Osi.ClearTag(character_uuid, AVATAR_TAG)
+                    end
+                end
+            end
+        end
+
+        if avatar_state_dirty then
+            MarkAvatarStateDirty()
         end
     end)
     Ext.Osiris.RegisterListener("DB_DialogRequestCache_SpeakerList_NPCs", 4, "before", function(a,b,c,d)
-        --print("DB_DialogRequestCache_SpeakerList_NPCs "..a.." "..b.." "..c.." "..d)
+        --print("[MX_Avatar] DB_DialogRequestCache_SpeakerList_NPCs "..a.." "..b.." "..c.." "..d)
     end)
     Ext.Osiris.RegisterListener("DB_Inclusion_SpeakerCandidate", 2, "before", function(a,b)
-        print("DB_Inclusion_SpeakerCandidate "..a.." "..b)
+        print("[MX_Avatar] DB_Inclusion_SpeakerCandidate "..a.." "..b)
     end)
 
     Ext.Osiris.RegisterListener("CharacterJoinedParty", 1, "after", function(character_uuid)
-        if isStringInList(character_uuid, Origin_Avatars) then
-            -- gate out real origin avatars who don't have in party dialog
-            if HasInPartyDialog(character_uuid) or isStringInList(character_uuid, HIRELINGS) then
-                if Osi.HasPassive(character_uuid,"MX_AVATAR_PASSIVE") == 0 then
-                    Osi.AddPassive(character_uuid,"MX_AVATAR_PASSIVE")
-                    if Osi.IsTagged(character_uuid, AVATAR_TAG) == 1 and Osi.HasAppliedStatus(character_uuid, "MX_AVATAR_STATUS") == 0 then
-                        Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
-                    elseif Osi.IsTagged(character_uuid, AVATAR_TAG) == 0 and Osi.HasAppliedStatus(character_uuid, "MX_AVATAR_STATUS") == 1 then
-                        Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
-                    end
-                end
-                pcall(Osi.ObjectTimerLaunch, character_uuid, SYNC_AVATAR_STATUS_TIMER, 1000)
-                SyncUtilitySpell(character_uuid)
-            end
+        EnsureAvatarPassive(character_uuid)
 
-            if HasInPartyDialog(character_uuid) then
-                if Osi.HasPassive(character_uuid,"MX_BE_QUIET_PASSIVE") == 0 then
-                    Osi.AddPassive(character_uuid,"MX_BE_QUIET_PASSIVE")
-                end
+        if isStringInList(character_uuid, COMPANIONS) and HasInPartyDialog(character_uuid) then
+            if Osi.HasPassive(character_uuid,"MX_BE_QUIET_PASSIVE") == 0 then
+                Osi.AddPassive(character_uuid,"MX_BE_QUIET_PASSIVE")
             end
         end
     end)
@@ -288,111 +538,112 @@ function OnSessionLoaded()
         local party = Osi.DB_PartyMembers:Get(nil)
         for i = #party, 1, -1 do
             character_uuid = party[i][1]
-            print("Processing party member"..character_uuid)
-            if isStringInList(character_uuid, Origin_Avatars) then
-                print("Origin_Avatars "..character_uuid)
-                -- gate out real origin avatars who don't have in party dialog
-                if HasInPartyDialog(character_uuid) or isStringInList(character_uuid, HIRELINGS) then
-                    print("Checking passive "..character_uuid)
+            print("[MX_Avatar] Processing party member"..character_uuid)
+            EnsureAvatarPassive(character_uuid)
 
-                    if Osi.HasPassive(character_uuid,"MX_AVATAR_PASSIVE") == 0 then
-                        print("Adding passive "..character_uuid)
-
-                        Osi.AddPassive(character_uuid,"MX_AVATAR_PASSIVE")
-                        if Osi.IsTagged(character_uuid, AVATAR_TAG) == 1 and Osi.HasAppliedStatus(character_uuid, "MX_AVATAR_STATUS") == 0 then
-                            print("Already avatar, toggle passive "..character_uuid)
-                            Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
-                        elseif Osi.IsTagged(character_uuid, AVATAR_TAG) == 0 and Osi.HasAppliedStatus(character_uuid, "MX_AVATAR_STATUS") == 1 then
-                            print("Not avatar, toggle passive "..character_uuid)
-
-                            Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
-                        end
-                    end
-                    pcall(Osi.ObjectTimerLaunch, character_uuid, SYNC_AVATAR_STATUS_TIMER, 1000)
-                    SyncUtilitySpell(character_uuid)
-                end
-
-                if HasInPartyDialog(character_uuid) then
-                    if Osi.HasPassive(character_uuid,"MX_BE_QUIET_PASSIVE") == 0 then
-                        Osi.AddPassive(character_uuid,"MX_BE_QUIET_PASSIVE")
-                    end
+            if isStringInList(character_uuid, COMPANIONS) and HasInPartyDialog(character_uuid) then
+                if Osi.HasPassive(character_uuid,"MX_BE_QUIET_PASSIVE") == 0 then
+                    Osi.AddPassive(character_uuid,"MX_BE_QUIET_PASSIVE")
                 end
             end
         end
     end)
     Ext.Osiris.RegisterListener("DialogStarted", 2, "before", function(dialog, instance_id)
-        --print("DialogStarted before"..dialog.." "..instance_id)
+        --print("[MX_Avatar] DialogStarted before"..dialog.." "..instance_id)
     end)
     Ext.Osiris.RegisterListener("DialogActorLeft", 4, "after", function(dialog, instance_id, character_uuid, instance_ended)
-        if isStringInList(character_uuid, Origin_Avatars) then
-            if PersistentVars["TempInDialogCompanions"][character_uuid] ~= nil then
-                -- remove avatar
-                PersistentVars["TempInDialogCompanions"][character_uuid] = nil
+        local avatar_state = GetAvatarState()
+        local avatar_state_dirty = false
+        if avatar_state["TempInDialogCompanions"] and avatar_state["TempInDialogCompanions"][character_uuid] ~= nil then
+            if avatar_state["TempInDialogAvatars"][instance_id] ~= nil then
+                avatars_to_reset = avatar_state["TempInDialogAvatars"][instance_id]
+                avatar_state["TempInDialogAvatars"][instance_id] = nil
+                avatar_state_dirty = true
 
-                if Osi.IsTagged(character_uuid, AVATAR_TAG) == 1 then
-                    --Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
+                for _, avatar in ipairs(avatars_to_reset) do
+                    RestoreAvatarStatus(avatar)
+                end
+            end
+
+            -- remove avatar
+            avatar_state["TempInDialogCompanions"][character_uuid] = nil
+            avatar_state_dirty = true
+
+            if Osi.IsTagged(character_uuid, AVATAR_TAG) == 1 then
+                --Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
+                if IsOnlyAvatar(character_uuid) then
+                    print("[MX_Avatar] Refusing to clear temporary speaker because it is the only avatar "..character_uuid)
+                    RestoreAvatarStatus(character_uuid)
+                else
                     Osi.ClearTag(character_uuid, AVATAR_TAG)
                 end
             end
-            if PersistentVars["TempInDialogSpokeToAvatar"][character_uuid] ~= nil then
-                PersistentVars["TempInDialogSpokeToAvatar"][character_uuid] = nil
+        end
+        if avatar_state["TempInDialogSpokeToAvatar"] and avatar_state["TempInDialogSpokeToAvatar"][character_uuid] ~= nil then
+            avatar_state["TempInDialogSpokeToAvatar"][character_uuid] = nil
+            avatar_state_dirty = true
 
-                -- add back avatar
-                if Osi.IsTagged(character_uuid, AVATAR_TAG) == 0 then
-                    --Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
-                    Osi.SetTag(character_uuid, AVATAR_TAG)
-                end
-            end
-
+            -- add back avatar
+            --Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
+            RestoreAvatarStatus(character_uuid)
+        end
+        if avatar_state_dirty then
+            MarkAvatarStateDirty()
         end
     end)
     Ext.Osiris.RegisterListener("DialogActorJoined", 4, "after", function(dialog, instance_id, character_uuid, speakerIndex)
         if isStringInList(character_uuid, Origin_Avatars) then
-            --print("DialogActorJoined "..character_uuid.." "..speakerIndex)
+            --print("[MX_Avatar] DialogActorJoined "..character_uuid.." "..speakerIndex)
         end
     end)
 
     -- this is not called when manually calling startdialog_fixed. only called when clicking on npc
     -- tihs handles clicking on characters as a companion who can change to avatar
     Ext.Osiris.RegisterListener("DialogStartRequested", 2, "before", function(npc, character_uuid)
-        --print("DialogStartRequested "..npc .."  " ..character_uuid)
-        if PersistentVars["TempInDialogSpokeToAvatar"] == nil then
-            PersistentVars["TempInDialogSpokeToAvatar"] = {}
-        end
-        if PersistentVars["TempInDialogCompanions"] == nil then
-            PersistentVars["TempInDialogCompanions"] = {}
-        end
-        local speaker_is_origin_avatar = isStringInList(character_uuid, Origin_Avatars)
+        --print("[MX_Avatar] DialogStartRequested "..npc .."  " ..character_uuid)
+        local avatar_state = GetAvatarState()
+        local avatar_state_dirty = false
+        local speaker_has_avatar_passive = Osi.HasPassive(character_uuid,"MX_AVATAR_PASSIVE") == 1
         local target_is_origin_avatar = isStringInList(npc, Origin_Avatars)
-        if not speaker_is_origin_avatar and not target_is_origin_avatar then
+        if not speaker_has_avatar_passive and not target_is_origin_avatar then
             return
         end
 
-        if speaker_is_origin_avatar and Osi.HasPassive(character_uuid,"MX_AVATAR_PASSIVE") == 1 and Osi.IsTagged(character_uuid, AVATAR_TAG) == 0 then
-            PersistentVars["TempInDialogCompanions"][character_uuid] = true
+        if speaker_has_avatar_passive and Osi.IsTagged(character_uuid, AVATAR_TAG) == 0 then
+            avatar_state["TempInDialogCompanions"][character_uuid] = true
+            avatar_state_dirty = true
           --  Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
             Osi.DB_Avatars(character_uuid) -- force this early!
             Osi.SetTag(character_uuid, AVATAR_TAG)
         end
 
         if target_is_origin_avatar and Osi.HasPassive(npc,"MX_AVATAR_PASSIVE") == 1 and Osi.IsTagged(npc, AVATAR_TAG) == 1 then
-            PersistentVars["TempInDialogSpokeToAvatar"][npc] = true
+            if IsOnlyAvatar(npc) then
+                print("[MX_Avatar] Refusing to temporarily demote last avatar before dialog "..npc)
+            else
+                avatar_state["TempInDialogSpokeToAvatar"][npc] = true
+                avatar_state_dirty = true
         --    Osi.TogglePassive(npc, "MX_AVATAR_PASSIVE")
-            Osi.DB_Avatars:Delete(npc) -- force this early!
-            Osi.ClearTag(npc, AVATAR_TAG)
+                Osi.DB_Avatars:Delete(npc) -- force this early!
+                Osi.ClearTag(npc, AVATAR_TAG)
+            end
+        end
+        if avatar_state_dirty then
+            MarkAvatarStateDirty()
         end
     end)
 
     Ext.Osiris.RegisterListener("TagSet", 2, "after", function(character_uuid, tag)
         if IsAvatarTag(tag) then
-            -- dont sync
-            if PersistentVars["TempInDialogCompanions"] and PersistentVars["TempInDialogCompanions"][character_uuid] == true then
+             -- dont sync
+            local avatar_state = GetAvatarState()
+            if avatar_state["TempInDialogCompanions"] and avatar_state["TempInDialogCompanions"][character_uuid] == true then
                 return
             end
 
             if Osi.HasPassive(character_uuid,"MX_AVATAR_PASSIVE") == 1 then
                 if Osi.HasAppliedStatus(character_uuid, "MX_AVATAR_STATUS") == 0 then
-                    print("Force clear flag "..character_uuid)
+                    print("[MX_Avatar] Force clear flag "..character_uuid)
                     Osi.ClearTag(character_uuid, AVATAR_TAG)
                 end
             end
@@ -403,7 +654,8 @@ function OnSessionLoaded()
     Ext.Osiris.RegisterListener("TagCleared", 2, "after", function(character_uuid, tag)
         if IsAvatarTag(tag) then
              -- dont sync
-            if PersistentVars["TempInDialogSpokeToAvatar"] and PersistentVars["TempInDialogSpokeToAvatar"][character_uuid] == true then
+            local avatar_state = GetAvatarState()
+            if avatar_state["TempInDialogSpokeToAvatar"] and avatar_state["TempInDialogSpokeToAvatar"][character_uuid] == true then
                 return
             end
 
@@ -412,10 +664,14 @@ function OnSessionLoaded()
                 return
             end
 
+            if IsLastAvatarTagClear(character_uuid) then
+                print("[MX_Avatar] ERROR: LAST AVATAR TAG CLEARED "..character_uuid)
+            end
+
             if Osi.HasPassive(character_uuid,"MX_AVATAR_PASSIVE") == 1 then
 
                 if Osi.HasAppliedStatus(character_uuid, "MX_AVATAR_STATUS") == 1 then
-                    print("Force set flag "..character_uuid)
+                    print("[MX_Avatar] Force set flag "..character_uuid)
                     Osi.SetTag(character_uuid, AVATAR_TAG)
                 end
             end
@@ -426,7 +682,7 @@ function OnSessionLoaded()
         if status == "MX_AVATAR_STATUS" then
             SyncUtilitySpell(character_uuid)
             if Osi.IsTagged(character_uuid, AVATAR_TAG) == 0 then
-                print("Avatar tag set "..character_uuid)
+                print("[MX_Avatar] Avatar tag set "..character_uuid)
                 Osi.SetTag(character_uuid, AVATAR_TAG)
             end
             if IsPlayerInCamp(character_uuid) then
@@ -441,10 +697,22 @@ function OnSessionLoaded()
 
     Ext.Osiris.RegisterListener("StatusRemoved", 4, "after", function (character_uuid, status, _, _)
         if status == "MX_AVATAR_STATUS" then
+            if IsOnlyAvatar(character_uuid) then
+                print("[MX_Avatar] Refusing to remove last avatar status "..character_uuid)
+                if Osi.HasPassive(character_uuid,"MX_AVATAR_PASSIVE") == 1 then
+                    Osi.TogglePassive(character_uuid, "MX_AVATAR_PASSIVE")
+                end
+                SyncUtilitySpell(character_uuid)
+                return
+            end
+            local should_setup_companion = ShouldSetupTrueOriginAsCompanion(character_uuid)
             SyncUtilitySpell(character_uuid)
             if Osi.IsTagged(character_uuid, AVATAR_TAG) == 1 then
-                print("Avatar tag cleared "..character_uuid)
+                print("[MX_Avatar] Avatar tag cleared "..character_uuid)
                 Osi.ClearTag(character_uuid, AVATAR_TAG)
+            end
+            if should_setup_companion then
+                SetupTrueOriginAsCompanion(character_uuid)
             end
         end
         if status == "MX_BE_QUIET_STATUS" then
@@ -459,6 +727,17 @@ function OnSessionLoaded()
     Ext.Osiris.RegisterListener("ObjectTimerFinished", 2, "after", function(character_uuid, event)
         -- Got to do this async or characters will overlap
         if event == SYNC_AVATAR_STATUS_TIMER then
+            local avatar_state = GetAvatarState()
+            if avatar_state["TempInDialogCompanions"] and avatar_state["TempInDialogCompanions"][character_uuid] == true then
+                return
+            end
+            if avatar_state["TempInDialogSpokeToAvatar"] and avatar_state["TempInDialogSpokeToAvatar"][character_uuid] == true then
+                return
+            end
+            if HasTempInDialogAvatarValue(character_uuid) then
+                return
+            end
+
             if Osi.HasPassive(character_uuid,"MX_AVATAR_PASSIVE") == 1 then
                 if Osi.IsTagged(character_uuid, AVATAR_TAG) == 1 and Osi.HasAppliedStatus(character_uuid, "MX_AVATAR_STATUS") == 0 then
                     Osi.ClearTag(character_uuid, AVATAR_TAG)
@@ -581,6 +860,14 @@ function SetupCamp(current_avatar_guid, skip_teleport)
     for _, templates in pairs(Osi.DB_Camp_PersonalCornerLevelTemplate:Get(current_camp, current_avatar_guid, nil)) do
         template_guid = templates[3]
         Osi.PROC_CacheLoadLevelTemplate(template_guid)
+        has_own_tent = true
+    end
+
+    for _, templates in pairs(Osi.DB_Camp_PersonalCornerLevelTemplate:Get(current_camp, current_avatar_guid, nil, nil)) do
+        corner_template = templates[3]
+        empty_template = templates[4]
+        Osi.PROC_CacheLoadLevelTemplate(corner_template)
+        Osi.PROC_CacheUnloadLevelTemplate(empty_template)
         has_own_tent = true
     end
 
