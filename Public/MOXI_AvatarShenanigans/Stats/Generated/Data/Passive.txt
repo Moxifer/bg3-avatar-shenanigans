@@ -3,7 +3,7 @@ type "PassiveData"
 data "Icon" "statIcons_SussurBloom"
 data "DisplayName" "h43629730g0ec2g44a6gabfbg0aa331039681"
 data "Description" "h803eecfage45ag4ad8gb210g2a5c8ca1608d"
-data "Properties" "IsToggled;ToggledDefaultOff;Temporary"
+data "Properties" "IsToggled;ToggledDefaultOff"
 data "ToggleOnFunctors" "ApplyStatus(MX_AVATAR_STATUS, 100, -1)"
 data "ToggleOffFunctors" "RemoveStatus(MX_AVATAR_STATUS)"
 
